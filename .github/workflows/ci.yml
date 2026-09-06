@@ -27,7 +27,7 @@ permissions:
 env:
   # The one variable that separates the arms: on baseline, action-checkout
   # skips its Set up Chalk step entirely.
-  CHALK_ON: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+  CHALK_ON: ${{ inputs.leg == 'instrumented' }}
 
 run-name: "CI ${{ inputs.leg || 'push' }} ${{ inputs.racecar_run }}"
 
@@ -157,15 +157,15 @@ jobs:
           test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
           test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
 
-      # workflow_dispatch is not one of the action's accepted triggering-events
-      # (merge_group | pull_request | push | manual) and the input defaults to
-      # github.event_name, so a dispatched run has to name the event and supply
-      # the commit range itself. push is the closest match to what this job does
-      # on a real push, and pick_base_and_head_hash rejects an empty range.
+      # The action defaults triggering-event to github.event_name and rejects
+      # anything outside (merge_group | pull_request | push | manual). That
+      # default lives in the action's own action.yml, so it cannot be fixed by
+      # rewriting github.event_name here -- it has to be passed explicitly. push
+      # is what this job does upstream, and pick_base_and_head_hash rejects an
+      # empty range, so the range is supplied too.
       # https://github.com/redhat-plumbers-in-action/differential-shellcheck/blob/v5.5.6/src/functions.sh
       - id: shellcheck-range
         name: Resolve Differential ShellCheck range
-        if: github.event_name == 'workflow_dispatch'
         run: echo "base=$(git rev-parse HEAD~1)" >>"$GITHUB_OUTPUT"
 
       - id: ShellCheck
@@ -173,6 +173,6 @@ jobs:
         uses: redhat-plumbers-in-action/differential-shellcheck@d965e66ec0b3b2f821f75c8eff9b12442d9a7d1e # v5.5.6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          triggering-event: ${{ github.event_name == 'workflow_dispatch' && 'push' || github.event_name }}
-          push-event-base: ${{ github.event_name == 'workflow_dispatch' && steps.shellcheck-range.outputs.base || github.event.before }}
-          push-event-head: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.after }}
+          triggering-event: push
+          push-event-base: ${{ github.event.before || steps.shellcheck-range.outputs.base }}
+          push-event-head: ${{ github.event.after || github.sha }}
